@@ -430,6 +430,7 @@ reparent(struct proc *p)
 void
 exit(int status)
 {
+ 
   printf("Process %d finished. Completion time: %d ticks\n", myproc()->pid, ticks);
   num_processes--; // decrement
 
@@ -440,9 +441,10 @@ exit(int status)
   }
 
   struct proc *p = myproc();
+  printf(">>> exit() called by pid=%d (%s) with status=%d\n", p->pid, p->name, status);
 
   if(p == initproc)
-    panic("init exiting");
+    panic("init exiting"); 
 
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){

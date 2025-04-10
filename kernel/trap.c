@@ -34,6 +34,9 @@ trapinithart(void)
 /*-----------PAGE FAULT HANDLING----------*/
 
 int handle_page_fault(struct proc *p, uint64 fault_addr) {
+
+
+
     struct lazyseg *segs = p->lazysegs;
     printf("Handling page fault at address 0x%lx\n", fault_addr);
 
@@ -67,11 +70,13 @@ int handle_page_fault(struct proc *p, uint64 fault_addr) {
                 return -1;
             }
 
-            // Map page with appropriate permissions
+            // Map page with appropriate permissions 
             int perm = PTE_U | PTE_V;
             if (seg->flags & PTE_R) perm |= PTE_R;
             if (seg->flags & PTE_W) perm |= PTE_W;
-            if (seg->flags & PTE_X) perm |= PTE_X;
+            if (seg->flags & PTE_X) perm |= PTE_X; 
+
+  
             
             printf("Mapping VA 0x%lx (file offset: %d, size: %d)\n", page_start, file_offset, bytes_to_read);
             pte_t *pte = walk(p->pagetable, page_start, 0);
@@ -93,8 +98,8 @@ int handle_page_fault(struct proc *p, uint64 fault_addr) {
         }
     }
 
-    printf("FAIL - NO MATCHING SEGMENT");
-    return -1; // No matching segment
+    printf("FAIL - NO MATCHING SEGMENT\n");
+    return 1; // No matching segment
 }
 
 /*-----------PAGE FAULT HANDLING----------*/
@@ -110,8 +115,9 @@ usertrap(void)
 {
   int which_dev = 0;
 
+/*
   if((r_sstatus() & SSTATUS_SPP) != 0)
-    panic("usertrap: not from user mode");
+    panic("usertrap: not from user mode"); */
 
   // send interrupts and exceptions to kerneltrap(),
   // since we're now in the kernel.
@@ -120,23 +126,36 @@ usertrap(void)
   struct proc *p = myproc();
 
 /*--------PAGE FAULT CATCHING---------*/
+
+printf("Current process pid: %d\n", p->pid);
+if (p->pid != 1) {
     // Check for page fault -> if the cause is from instruction, load or store access fault
-    if (r_scause() == 12 || r_scause() == 13 || r_scause() == 15) { 
+    if (r_scause() == 0xc || r_scause() == 0xd || r_scause() == 0xf) { 
         uint64 fault_addr = r_stval(); // faulting address
+
+
         printf("Faulting address: 0x%lx\n", r_stval());
-        if (handle_page_fault(p, fault_addr) == 0) {
-            printf("Page catching success\n");
+
+        int ret_val = handle_page_fault(p, fault_addr);
+        if (ret_val == 0) {
+            printf("Page catching success for pid=%d, va=0x%lx\n", p->pid, fault_addr);
             return; // successful, just return
+       /*} else if (ret_val == -2) {
+          return; */ // this means the fault address is outside of stack region (which is checked in handle_page_fault) so we just return back to the process
         } else {
             p->killed = 1; // marking it to kill
             printf("Page fault handling failed for pid=%d, va=0x%lx\n", p->pid, fault_addr);
         }
     }
-
+} 
  /*--------PAGE FAULT CATCHING---------*/
   
   // save user program counter.
   p->trapframe->epc = r_sepc();
+
+  // print the value of sepc
+  printf("HELLO sepc value: 0x%lx\n", p->trapframe->epc);
+
   
   if(r_scause() == 8){
     // system call
@@ -153,8 +172,8 @@ usertrap(void)
     intr_on();
 
     syscall();
-  } else if((which_dev = devintr()) != 0){
-    // ok
+  /*} else if((which_dev = devintr()) != 0){
+    // ok */
   } else {
     printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
     printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
@@ -237,7 +256,7 @@ kerneltrap()
     printf("Unknown interrupt or trap\n");
     printf("scause=0x%lx sepc=0x%lx stval=0x%lx\n", scause, r_sepc(), r_stval());
     panic("kerneltrap");
-  }
+  } 
 
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2 && myproc() != 0)
@@ -300,9 +319,10 @@ devintr()
     // timer interrupt.
     clockintr();
     return 2;
-  /*} else if(scause == 0xc) { // HANDLING PAGE FAULTTTTT
+  } else if(scause == 0xc) { // HANDLING PAGE FAULTTTTT
+    usertrap();
     printf("Page fault or access violation occurred\n");
-    return 1; */
+    return 0;  
   } else {
     return 0;
   }

@@ -9,6 +9,7 @@
 
 // static int loadseg(pde_t *, uint64, struct inode *, uint, uint);
 
+/*
 int flags2perm(int flags)
 {
     int perm = 0;
@@ -17,7 +18,19 @@ int flags2perm(int flags)
     if(flags & 0x2)
       perm |= PTE_W;
     return perm;
+} */
+
+int flags2perm(int flags) {
+    int perm = PTE_U | PTE_V; // always include these
+    if (flags & ELF_PROG_FLAG_READ)
+        perm |= PTE_R;
+    if (flags & ELF_PROG_FLAG_WRITE)
+        perm |= PTE_W;
+    if (flags & ELF_PROG_FLAG_EXEC)
+        perm |= PTE_X;
+    return perm;
 }
+
 
 int
 exec(char *path, char **argv)
@@ -42,6 +55,8 @@ exec(char *path, char **argv)
   // Check ELF header
   if(readi(ip, 0, (uint64)&elf, 0, sizeof(elf)) != sizeof(elf))
     goto bad;
+
+  printf("[exec] ELF entry point: 0x%lx\n", elf.entry);
 
   if(elf.magic != ELF_MAGIC)
     goto bad;
@@ -96,11 +111,10 @@ for(i=0, off=elf.phoff; i<elf.phnum; i++, off+=sizeof(ph)){
 
 
     // setup virtual memory and map the pages
-    /*
     uint sz1;
     if((sz1 = uvmalloc(pagetable, sz, ph.vaddr + ph.memsz, PTE_U | PTE_W | PTE_X)) == 0)
       goto bad;
-    sz = sz1;
+    sz = sz1; 
 
     // marking all segments as invalid
     for (uint64 v = ph.vaddr; v < ph.vaddr + ph.memsz; v += PGSIZE) {
@@ -109,7 +123,7 @@ for(i=0, off=elf.phoff; i<elf.phnum; i++, off+=sizeof(ph)){
           *pte &= ~PTE_V;  // Remove the PTE_V flag to mark the page as invalid (not present).
       }
     }
-    */
+    
     printf("Lazy Segment %d: va_start=%lx, va_end=%lx, file_offset=%lx\n",
        p->num_lazysegs - 1,
        p->lazysegs[p->num_lazysegs - 1].va_start,
@@ -182,6 +196,14 @@ for(i=0, off=elf.phoff; i<elf.phnum; i++, off+=sizeof(ph)){
   p->trapframe->epc = elf.entry;  // initial program counter = main
   p->trapframe->sp = sp; // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);
+
+  printf("Program entry: 0x%lx\n", elf.entry);
+  for (int i = 0; i < p->num_lazysegs; i++) {
+    printf("Segment %d: start=0x%lx end=0x%lx\n", i, 
+        p->lazysegs[i].va_start, 
+        p->lazysegs[i].va_end);
+  }
+
 
   return argc; // this ends up in a0, the first argument to main(argc, argv)
 

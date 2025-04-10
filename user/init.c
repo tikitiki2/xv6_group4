@@ -14,6 +14,7 @@ char *argv[] = { "sh", 0 };
 int
 main(void)
 {
+
   int pid, wpid;
 
   if(open("console", O_RDWR) < 0){
@@ -22,6 +23,9 @@ main(void)
   }
   dup(0);  // stdout
   dup(0);  // stderr
+
+  printf("hello\n");
+  while(1); 
 
   for(;;){
     printf("init: starting sh\n");
@@ -48,7 +52,12 @@ main(void)
         exit(1);
       } else {
         // it was a parentless process; do nothing.
+        printf("HEEEEEELLLOOO Hello from user space\n");
+        exit(0);
       }
     }
   }
+
+  printf("HEEEEEELLLOOO Hello from user space\n");
+  exit(0);
 }
