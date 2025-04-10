@@ -1,3 +1,12 @@
+#define MAX_LAZYSEG 8
+struct lazyseg {
+  uint64 va_start;
+  uint64 va_end;
+  struct inode *ip;
+  uint64 file_offset;
+  int flags;
+};
+
 // Saved registers for kernel context switches.
 struct context {
   uint64 ra;
@@ -85,6 +94,12 @@ enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
 // Per-process state
 struct proc {
+
+  // LAZY LOADING SEGMENTS
+  int num_lazysegs;
+  struct lazyseg lazysegs[MAX_LAZYSEG];
+  
+
   struct spinlock lock;
 
   // p->lock must be held when using these:
@@ -108,3 +123,7 @@ struct proc {
   char name[16];               // Process name (debugging)
   int priority;                //priority level of given process
 };
+
+
+
+

@@ -29,6 +29,69 @@ trapinithart(void)
   w_stvec((uint64)kernelvec);
 }
 
+
+
+/*-----------PAGE FAULT HANDLING----------*/
+
+int handle_page_fault(struct proc *p, uint64 fault_addr) {
+    struct lazyseg *segs = p->lazysegs;
+    printf("Handling page fault at address 0x%lx\n", fault_addr);
+
+    for (int i = 0; i < p->num_lazysegs; i++) {
+        struct lazyseg *seg = &segs[i];
+        if (fault_addr >= seg->va_start && fault_addr < seg->va_end) {
+            // Found a segment covering the faulting address
+
+            uint64 page_start = PGROUNDDOWN(fault_addr);
+            char *mem = kalloc();
+            if (!mem) {
+                printf("Failed to allocate memory for page\n");
+                return -1;
+            }
+            memset(mem, 0, PGSIZE);
+
+            // Compute how much to read — don't go past segment end
+            uint64 offset_in_seg = page_start - seg->va_start;
+            uint file_offset = seg->file_offset + offset_in_seg;
+
+            uint bytes_to_read = PGSIZE;
+            if (page_start + PGSIZE > seg->va_end)
+                bytes_to_read = seg->va_end - page_start;
+
+            ilock(seg->ip);
+            int read = readi(seg->ip, 0, (uint64)mem, file_offset, bytes_to_read);
+            iunlock(seg->ip);
+
+            if (read < 0) {
+                kfree(mem);
+                return -1;
+            }
+
+            // Map page with appropriate permissions
+            int perm = PTE_U | PTE_V;
+            if (seg->flags & PTE_R) perm |= PTE_R;
+            if (seg->flags & PTE_W) perm |= PTE_W;
+            if (seg->flags & PTE_X) perm |= PTE_X;
+
+            if (mappages(p->pagetable, page_start, PGSIZE, (uint64)mem, perm) < 0) {
+                kfree(mem);
+                printf("FAIL -1\n");
+                return -1;
+            }
+
+            printf("SUCCESS\n");
+            return 0; // success
+        }
+    }
+
+    printf("FAIL - NO MATCHING SEGMENT");
+    return -1; // No matching segment
+}
+
+/*-----------PAGE FAULT HANDLING----------*/
+
+
+
 //
 // handle an interrupt, exception, or system call from user space.
 // called from trampoline.S
@@ -46,6 +109,22 @@ usertrap(void)
   w_stvec((uint64)kernelvec);
 
   struct proc *p = myproc();
+
+/*--------PAGE FAULT CATCHING---------*/
+    // Check for page fault -> if the cause is from instruction, load or store access fault
+    if (r_scause() == 12 || r_scause() == 13 || r_scause() == 15) { 
+        uint64 fault_addr = r_stval(); // faulting address
+        printf("Faulting address: 0x%lx\n", r_stval());
+        if (handle_page_fault(p, fault_addr) == 0) {
+            printf("Page catching success\n");
+            return; // successful, just return
+        } else {
+            p->killed = 1; // marking it to kill
+            printf("Page fault handling failed for pid=%d, va=0x%lx\n", p->pid, fault_addr);
+        }
+    }
+
+ /*--------PAGE FAULT CATCHING---------*/
   
   // save user program counter.
   p->trapframe->epc = r_sepc();
@@ -146,6 +225,7 @@ kerneltrap()
 
   if((which_dev = devintr()) == 0){
     // interrupt or trap from an unknown source
+    printf("Unknown interrupt or trap\n");
     printf("scause=0x%lx sepc=0x%lx stval=0x%lx\n", scause, r_sepc(), r_stval());
     panic("kerneltrap");
   }
@@ -211,6 +291,9 @@ devintr()
     // timer interrupt.
     clockintr();
     return 2;
+  /*} else if(scause == 0xc) { // HANDLING PAGE FAULTTTTT
+    printf("Page fault or access violation occurred\n");
+    return 1; */
   } else {
     return 0;
   }

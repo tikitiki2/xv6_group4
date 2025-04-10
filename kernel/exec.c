@@ -7,7 +7,7 @@
 #include "defs.h"
 #include "elf.h"
 
-static int loadseg(pde_t *, uint64, struct inode *, uint, uint);
+// static int loadseg(pde_t *, uint64, struct inode *, uint, uint);
 
 int flags2perm(int flags)
 {
@@ -49,6 +49,7 @@ exec(char *path, char **argv)
   if((pagetable = proc_pagetable(p)) == 0)
     goto bad;
 
+/*
   // Load program into memory.
   for(i=0, off=elf.phoff; i<elf.phnum; i++, off+=sizeof(ph)){
     if(readi(ip, 0, (uint64)&ph, off, sizeof(ph)) != sizeof(ph))
@@ -67,13 +68,66 @@ exec(char *path, char **argv)
     sz = sz1;
     if(loadseg(pagetable, ph.vaddr, ip, ph.off, ph.filesz) < 0)
       goto bad;
-  }
+  } */
+
+// -------------IMPLEMENTATION of demand paging modifications
+// Loading program headers (instead of the entire actual program)
+// *lazy loading
+
+for(i=0, off=elf.phoff; i<elf.phnum; i++, off+=sizeof(ph)){
+    if(readi(ip, 0, (uint64)&ph, off, sizeof(ph)) != sizeof(ph))
+      goto bad;
+    if(ph.type != ELF_PROG_LOAD)
+      continue;
+    if(ph.memsz < ph.filesz)
+      goto bad;
+    if(ph.vaddr + ph.memsz < ph.vaddr)
+      goto bad;
+    if(ph.vaddr % PGSIZE != 0)
+      goto bad;
+
+    // Save lazy mapping info instead of loading now
+    p->lazysegs[p->num_lazysegs].va_start = ph.vaddr;
+    p->lazysegs[p->num_lazysegs].va_end = ph.vaddr + ph.memsz;
+    p->lazysegs[p->num_lazysegs].ip = idup(ip); // duplicate inode reference
+    p->lazysegs[p->num_lazysegs].file_offset = ph.off;
+    p->lazysegs[p->num_lazysegs].flags = ph.flags;
+    p->num_lazysegs++;
+
+
+    // setup virtual memory and map the pages
+    uint sz1;
+    if((sz1 = uvmalloc(pagetable, sz, ph.vaddr + ph.memsz, PTE_U | PTE_W | PTE_X)) == 0)
+      goto bad;
+    sz = sz1;
+
+    // marking all segments as invalid
+    for (uint64 v = ph.vaddr; v < ph.vaddr + ph.memsz; v += PGSIZE) {
+      pte_t *pte = walk(pagetable, v, 0);  // Get the page table entry for the virtual address.
+      if (pte != 0) {
+          *pte &= ~PTE_V;  // Remove the PTE_V flag to mark the page as invalid (not present).
+      }
+    }
+
+    printf("Lazy Segment %d: va_start=%lx, va_end=%lx, file_offset=%lx\n",
+       p->num_lazysegs - 1,
+       p->lazysegs[p->num_lazysegs - 1].va_start,
+       p->lazysegs[p->num_lazysegs - 1].va_end,
+       p->lazysegs[p->num_lazysegs - 1].file_offset);
+
+
+}
+
+// -------------IMPLEMENTATION of demand paging modifications
+
+
   iunlockput(ip);
   end_op();
   ip = 0;
 
   p = myproc();
   uint64 oldsz = p->sz;
+
 
   // Allocate some pages at the next page boundary.
   // Make the first inaccessible as a stack guard.
@@ -140,6 +194,8 @@ exec(char *path, char **argv)
   return -1;
 }
 
+
+/*
 // Load a program segment into pagetable at virtual address va.
 // va must be page-aligned
 // and the pages from va to va+sz must already be mapped.
@@ -163,4 +219,4 @@ loadseg(pagetable_t pagetable, uint64 va, struct inode *ip, uint offset, uint sz
   }
   
   return 0;
-}
+} */
