@@ -6,10 +6,6 @@
 #include "proc.h"
 #include "defs.h"
 
-int context_switch_count = 0; // initializing counter variable for context switches
-int num_processes = 0;  // Keeps track of active processes, to print out FINAL context switch value
-
-
 struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
@@ -128,7 +124,7 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
-  p->priority = 4; //default priority level
+
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
     freeproc(p);
@@ -173,8 +169,6 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
-  p->priority = 4;
-
 }
 
 // Create a user page table for a given process, with no user memory,
@@ -254,7 +248,7 @@ userinit(void)
 
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
-  p->priority = 4;      //set first process priority to 4
+
   p->state = RUNNABLE;
 
   release(&p->lock);
@@ -285,8 +279,6 @@ growproc(int n)
 int
 fork(void)
 {
-  num_processes++; // increment num processes
-  printf("Num processes %d\n", num_processes);
   int i, pid;
   struct proc *np;
   struct proc *p = myproc();
@@ -332,83 +324,7 @@ fork(void)
 
   return pid;
 }
-//set current process priority level from 0-4
-int setpriority(int pid,int priority){
 
-    if (priority<0 || priority>4){
-      //invalid priority
-      return -1;
-    }
-    //get pointer to current process
-    struct proc *p = myproc();
-    
-    //set priority
-    for(p = proc; p < &proc[NPROC]; p++){
-      acquire(&p->lock);
-      if(p->pid == pid) {
-        // Found the process: update its priority.
-        p->priority = priority;
-        
-        printf("Process %d priority changed to %d\n", pid, priority);
-        release(&p->lock);
-        return 0;
-      }
-      release(&p->lock);
-    }
-    return -1;
-}
-int
-forkP(int priority)
-{
-  int i, pid;
-  struct proc *np;
-  struct proc *p = myproc();
-  if (priority<0 || priority>4){
-    //invalid priority
-    return -1;
-  }
-  // Allocate process.
-  if((np = allocproc()) == 0){
-    return -1;
-  }
-
-  // Copy user memory from parent to child.
-  if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
-    freeproc(np);
-    release(&np->lock);
-    return -1;
-  }
-  np->sz = p->sz;
-
-  // copy saved user registers.
-  *(np->trapframe) = *(p->trapframe);
-
-  // Cause fork to return 0 in the child.
-  np->trapframe->a0 = 0;
-
-  // increment reference counts on open file descriptors.
-  for(i = 0; i < NOFILE; i++)
-    if(p->ofile[i])
-      np->ofile[i] = filedup(p->ofile[i]);
-  np->cwd = idup(p->cwd);
-
-  safestrcpy(np->name, p->name, sizeof(p->name));
-
-  pid = np->pid;
-  
- 
-  release(&np->lock);
-
-  acquire(&wait_lock);
-  np->parent = p;
-  release(&wait_lock);
-
-  acquire(&np->lock);
-  np->state = RUNNABLE;
-  release(&np->lock);
-
-  return pid;
-}
 // Pass p's abandoned children to init.
 // Caller must hold wait_lock.
 void
@@ -430,15 +346,6 @@ reparent(struct proc *p)
 void
 exit(int status)
 {
-  printf("Process %d finished. Completion time: %d ticks\n", myproc()->pid, ticks);
-  num_processes--; // decrement
-
-  //printf("Num processes %d\n", num_processes);
-
-  if (num_processes == 1) { // this means we are at the "last" process... always need at least 1 process running.
-    printf("Total Context Switches: %d\n", context_switch_count);
-  }
-
   struct proc *p = myproc();
 
   if(p == initproc)
@@ -534,60 +441,44 @@ wait(uint64 addr)
 //  - swtch to start running that process.
 //  - eventually that process transfers control
 //    via swtch back to the scheduler.
-
-int last_rr_index = 0; // global variable in proc.c
-
 void
 scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
-  c->proc = 0;
 
-  for (;;) {
+  c->proc = 0;
+  for(;;){
+    // The most recent process to run may have had interrupts
+    // turned off; enable them to avoid a deadlock if all
+    // processes are waiting.
     intr_on();
 
-    int highest = 5;
-    // First pass: find highest priority
-    for (p = proc; p < &proc[NPROC]; p++) {
-      acquire(&p->lock);
-      if ((p->state == RUNNABLE || p->state == RUNNING) && p->priority < highest) {
-        highest = p->priority;
-      }
-      release(&p->lock);
-    }
-
-    // Second pass: do round-robin over procs with same highest priority
     int found = 0;
-    for (int i = 0; i < NPROC; i++) {
-      int idx = (last_rr_index + i) % NPROC;
-      p = &proc[idx];
-      
+    for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
-      if (p->state == RUNNABLE && p->priority == highest) {
-        last_rr_index = (idx + 1) % NPROC; // update for next round
-        context_switch_count++;
-
-	printf("Scheduling Process %d (Priority %d)\n", p->pid, p->priority);
-
+      if(p->state == RUNNABLE) {
+        // Switch to chosen process.  It is the process's job
+        // to release its lock and then reacquire it
+        // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
         swtch(&c->context, &p->context);
+
+        // Process is done running for now.
+        // It should have changed its p->state before coming back.
         c->proc = 0;
-        release(&p->lock);
         found = 1;
-        break;
       }
       release(&p->lock);
     }
-
-    if (!found) {
+    if(found == 0) {
+      // nothing to run; stop running on this core until an interrupt.
       intr_on();
       asm volatile("wfi");
     }
   }
 }
-
 
 // Switch to scheduler.  Must hold only p->lock
 // and have changed proc->state. Saves and restores
@@ -783,17 +674,14 @@ procdump(void)
   [UNUSED]    "unused",
   [USED]      "used",
   [SLEEPING]  "sleep ",
-  [RUNNABLE]  "runable",
-  [RUNNING]   "running   ",
+  [RUNNABLE]  "runble",
+  [RUNNING]   "run   ",
   [ZOMBIE]    "zombie"
   };
   struct proc *p;
   char *state;
-   // Print a header for the output.
+
   printf("\n");
-  printf("PID\tSTATE\t  NAME\t      PRIORITY\n");
-  printf("------------------------------------------------\n");
- 
   for(p = proc; p < &proc[NPROC]; p++){
     if(p->state == UNUSED)
       continue;
@@ -801,7 +689,7 @@ procdump(void)
       state = states[p->state];
     else
       state = "???";
-    printf("%d\t%s\t%s\t%d\n", p->pid, state, p->name, p->priority);
+    printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
 }

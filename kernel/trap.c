@@ -5,6 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "vm.h"
 
 struct spinlock tickslock;
 uint ticks;
@@ -53,27 +54,34 @@ usertrap(void)
   if(r_scause() == 8){
     // system call
 
-    if(killed(p))
+    if(p->killed)
       exit(-1);
 
     // sepc points to the ecall instruction,
     // but we want to return to the next instruction.
     p->trapframe->epc += 4;
 
-    // an interrupt will change sepc, scause, and sstatus,
-    // so enable only now that we're done with those registers.
+    // an interrupt will change sstatus &c registers,
+    // so don't enable until done with those registers.
     intr_on();
 
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if(r_scause() == 13 || r_scause() == 15) {
+    // Page fault
+    uint64 va = r_stval();
+    if(va >= p->sz)
+      p->killed = 1;
+    else if(cowhandler(p->pagetable, va) != 0)
+      p->killed = 1;
   } else {
-    printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
-    printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
-    setkilled(p);
+    printf("usertrap(): unexpected scause %lx pid=%d\n", r_scause(), p->pid);
+    printf("            sepc=%lx stval=%lx\n", r_sepc(), r_stval());
+    p->killed = 1;
   }
 
-  if(killed(p))
+  if(p->killed)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.

@@ -16,7 +16,6 @@ sub entry {
 }
 	
 entry("fork");
-entry("forkP");
 entry("exit");
 entry("wait");
 entry("pipe");
@@ -38,4 +37,3 @@ entry("sbrk");
 entry("sleep");
 entry("uptime");
 entry("ps");
-entry("setpriority");

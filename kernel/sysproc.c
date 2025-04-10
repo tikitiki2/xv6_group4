@@ -26,22 +26,7 @@ sys_fork(void)
 {
   return fork();
 }
-uint64
-sys_forkP(void)
-{
-  int priority;
-  argint(0, &priority);
-  return forkP(priority);
-}
-uint64
-sys_setpriority(void)
-{
-  int priority;
-  int pid;
-  argint(0,&pid);
-  argint(1, &priority);
-  return setpriority(pid,priority);
-}
+
 uint64
 sys_wait(void)
 {

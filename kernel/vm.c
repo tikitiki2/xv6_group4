@@ -1,10 +1,12 @@
-#include "param.h"
 #include "types.h"
+#include "param.h"
 #include "memlayout.h"
-#include "elf.h"
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "proc.h"
+#include "spinlock.h"
+#include "kalloc.h"
 
 /*
  * the kernel's page table.
@@ -303,19 +305,16 @@ uvmfree(pagetable_t pagetable, uint64 sz)
   freewalk(pagetable);
 }
 
-// Given a parent process's page table, copy
-// its memory into a child's page table.
-// Copies both the page table and the
-// physical memory.
-// returns 0 on success, -1 on failure.
-// frees any allocated pages on failure.
+// Given a parent process's page table, create a copy
+// of it for a child.
+// Returns 0 on success, -1 on failure.
+// Frees any allocated pages on failure.
 int
 uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -324,19 +323,66 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
+    
+    // Clear PTE_W and set PTE_COW
+    flags = (flags & (~PTE_W)) | PTE_COW;
+    *pte = PA2PTE(pa) | flags;
+    
+    // Map the page in the child's page table
+    if(mappages(new, i, PGSIZE, pa, flags) != 0){
       goto err;
     }
+    
+    // Increment reference count
+    krefinc((void*)pa);
   }
   return 0;
 
  err:
   uvmunmap(new, 0, i / PGSIZE, 1);
   return -1;
+}
+
+// Handle a page fault for a COW page
+int
+cowhandler(pagetable_t pagetable, uint64 va)
+{
+  pte_t *pte;
+  uint64 pa;
+  char *mem;
+  
+  if(va >= MAXVA)
+    return -1;
+  
+  pte = walk(pagetable, va, 0);
+  if(pte == 0)
+    return -1;
+  
+  if((*pte & PTE_V) == 0)
+    return -1;
+    
+  if((*pte & PTE_COW) == 0)
+    return -1;
+    
+  pa = PTE2PA(*pte);
+  
+  // Allocate a new page
+  if((mem = kalloc()) == 0)
+    return -1;
+    
+  // Copy the old page to the new page
+  memmove(mem, (char*)pa, PGSIZE);
+  
+  // Clear PTE_COW and set PTE_W
+  uint flags = (PTE_FLAGS(*pte) & (~PTE_COW)) | PTE_W;
+  
+  // Map the new page
+  *pte = PA2PTE((uint64)mem) | flags;
+  
+  // Decrement reference count of old page
+  krefdec((void*)pa);
+  
+  return 0;
 }
 
 // mark a PTE invalid for user access.

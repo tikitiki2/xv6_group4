@@ -7,7 +7,7 @@ int xv6_isdigit(char c) {
 
 
 int main(int argc, char *argv[]) {
-	
+
 	if (argc != 2) {
 		printf("Incorrect number of arguments!\n");
 		exit(1);
