@@ -96,6 +96,7 @@ for(i=0, off=elf.phoff; i<elf.phnum; i++, off+=sizeof(ph)){
 
 
     // setup virtual memory and map the pages
+    /*
     uint sz1;
     if((sz1 = uvmalloc(pagetable, sz, ph.vaddr + ph.memsz, PTE_U | PTE_W | PTE_X)) == 0)
       goto bad;
@@ -108,7 +109,7 @@ for(i=0, off=elf.phoff; i<elf.phnum; i++, off+=sizeof(ph)){
           *pte &= ~PTE_V;  // Remove the PTE_V flag to mark the page as invalid (not present).
       }
     }
-
+    */
     printf("Lazy Segment %d: va_start=%lx, va_end=%lx, file_offset=%lx\n",
        p->num_lazysegs - 1,
        p->lazysegs[p->num_lazysegs - 1].va_start,

@@ -48,7 +48,7 @@ int handle_page_fault(struct proc *p, uint64 fault_addr) {
                 printf("Failed to allocate memory for page\n");
                 return -1;
             }
-            memset(mem, 0, PGSIZE);
+            
 
             // Compute how much to read — don't go past segment end
             uint64 offset_in_seg = page_start - seg->va_start;
@@ -72,6 +72,15 @@ int handle_page_fault(struct proc *p, uint64 fault_addr) {
             if (seg->flags & PTE_R) perm |= PTE_R;
             if (seg->flags & PTE_W) perm |= PTE_W;
             if (seg->flags & PTE_X) perm |= PTE_X;
+            
+            printf("Mapping VA 0x%lx (file offset: %d, size: %d)\n", page_start, file_offset, bytes_to_read);
+            pte_t *pte = walk(p->pagetable, page_start, 0);
+            
+            if (pte && (*pte & PTE_V)) {
+                printf("Page already mapped at 0x%lx — assuming OK, but skipping load.\n", page_start);
+                kfree(mem);
+                return 0;
+            }
 
             if (mappages(p->pagetable, page_start, PGSIZE, (uint64)mem, perm) < 0) {
                 kfree(mem);
