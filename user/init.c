@@ -24,8 +24,8 @@ main(void)
   dup(0);  // stdout
   dup(0);  // stderr
 
-  printf("hello\n");
-  while(1); 
+  
+   
 
   for(;;){
     printf("init: starting sh\n");
@@ -53,7 +53,7 @@ main(void)
       } else {
         // it was a parentless process; do nothing.
         printf("HEEEEEELLLOOO Hello from user space\n");
-        exit(0);
+        
       }
     }
   }

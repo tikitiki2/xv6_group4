@@ -36,7 +36,7 @@ trapinithart(void)
 int handle_page_fault(struct proc *p, uint64 fault_addr) {
 
 
-
+    printf("handle pagefault\n");
     struct lazyseg *segs = p->lazysegs;
     printf("Handling page fault at address 0x%lx\n", fault_addr);
 
@@ -69,7 +69,7 @@ int handle_page_fault(struct proc *p, uint64 fault_addr) {
                 kfree(mem);
                 return -1;
             }
-
+            
             // Map page with appropriate permissions 
             int perm = PTE_U | PTE_V;
             if (seg->flags & PTE_R) perm |= PTE_R;
@@ -115,9 +115,9 @@ usertrap(void)
 {
   int which_dev = 0;
 
-/*
+
   if((r_sstatus() & SSTATUS_SPP) != 0)
-    panic("usertrap: not from user mode"); */
+    panic("usertrap: not from user mode"); 
 
   // send interrupts and exceptions to kerneltrap(),
   // since we're now in the kernel.
@@ -128,9 +128,9 @@ usertrap(void)
 /*--------PAGE FAULT CATCHING---------*/
 
 printf("Current process pid: %d\n", p->pid);
-if (p->pid != 1) {
+
     // Check for page fault -> if the cause is from instruction, load or store access fault
-    if (r_scause() == 0xc || r_scause() == 0xd || r_scause() == 0xf) { 
+if (r_scause() == 0xc || r_scause() == 0xd || r_scause() == 0xf) { 
         uint64 fault_addr = r_stval(); // faulting address
 
 
@@ -139,15 +139,16 @@ if (p->pid != 1) {
         int ret_val = handle_page_fault(p, fault_addr);
         if (ret_val == 0) {
             printf("Page catching success for pid=%d, va=0x%lx\n", p->pid, fault_addr);
-            return; // successful, just return
-       /*} else if (ret_val == -2) {
-          return; */ // this means the fault address is outside of stack region (which is checked in handle_page_fault) so we just return back to the process
+            usertrapret(); // successful, just return
+       } else if (ret_val == -2) {
+          return;  // this means the fault address is outside of stack region (which is checked in handle_page_fault) so we just return back to the process
         } else {
             p->killed = 1; // marking it to kill
             printf("Page fault handling failed for pid=%d, va=0x%lx\n", p->pid, fault_addr);
         }
     }
-} 
+
+
  /*--------PAGE FAULT CATCHING---------*/
   
   // save user program counter.
@@ -197,7 +198,7 @@ void
 usertrapret(void)
 {
   struct proc *p = myproc();
-
+  printf("returning to usermode\n");
   // we're about to switch the destination of traps from
   // kerneltrap() to usertrap(), so turn off interrupts until
   // we're back in user space, where usertrap() is correct.
