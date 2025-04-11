@@ -7,6 +7,7 @@
 #include "defs.h"
 #include "elf.h"
 
+
 // static int loadseg(pde_t *, uint64, struct inode *, uint, uint);
 
 /*
@@ -112,7 +113,8 @@ for(i=0, off=elf.phoff; i<elf.phnum; i++, off+=sizeof(ph)){
 
     // setup virtual memory and map the pages
     uint sz1;
-    if((sz1 = uvmalloc(pagetable, sz, ph.vaddr + ph.memsz, PTE_U | PTE_W | PTE_X)) == 0)
+    int perm = flags2perm(ph.flags);
+    if ((sz1 = uvmalloc(pagetable, sz, ph.vaddr + ph.memsz, perm)) == 0)
       goto bad;
     sz = sz1; 
 
@@ -129,7 +131,7 @@ for(i=0, off=elf.phoff; i<elf.phnum; i++, off+=sizeof(ph)){
        p->lazysegs[p->num_lazysegs - 1].va_start,
        p->lazysegs[p->num_lazysegs - 1].va_end,
        p->lazysegs[p->num_lazysegs - 1].file_offset);
-
+    
 
 }
 

@@ -279,6 +279,7 @@ growproc(int n)
   p->sz = sz;
   return 0;
 }
+extern int handle_page_fault(struct proc *p, uint64 fault_addr);
 
 // Create a new process, copying the parent.
 // Sets up child kernel stack to return as if from fork() system call.
@@ -294,6 +295,14 @@ fork(void)
   // Allocate process.
   if((np = allocproc()) == 0){
     return -1;
+  }
+  
+  // Copy lazy segments to child for demand paging
+  np->num_lazysegs = p->num_lazysegs;
+  for (int i = 0; i < p->num_lazysegs; i++) {
+    np->lazysegs[i] = p->lazysegs[i];
+    // duplicate inode reference (like in exec)
+    np->lazysegs[i].ip = idup(p->lazysegs[i].ip);
   }
 
   // Copy user memory from parent to child.

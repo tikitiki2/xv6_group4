@@ -45,7 +45,7 @@ int handle_page_fault(struct proc *p, uint64 fault_addr) {
         if (fault_addr >= seg->va_start && fault_addr < seg->va_end) {
             // Found a segment covering the faulting address
 
-            uint64 page_start = PGROUNDDOWN(fault_addr);
+            
             char *mem = kalloc();
             if (!mem) {
                 printf("Failed to allocate memory for page\n");
@@ -54,8 +54,10 @@ int handle_page_fault(struct proc *p, uint64 fault_addr) {
             
 
             // Compute how much to read — don't go past segment end
+            uint64 page_start = PGROUNDDOWN(fault_addr);
             uint64 offset_in_seg = page_start - seg->va_start;
             uint file_offset = seg->file_offset + offset_in_seg;
+
 
             uint bytes_to_read = PGSIZE;
             if (page_start + PGSIZE > seg->va_end)
@@ -64,17 +66,20 @@ int handle_page_fault(struct proc *p, uint64 fault_addr) {
             ilock(seg->ip);
             int read = readi(seg->ip, 0, (uint64)mem, file_offset, bytes_to_read);
             iunlock(seg->ip);
-
+            
+       
             if (read < 0) {
                 kfree(mem);
                 return -1;
             }
             
             // Map page with appropriate permissions 
+           
             int perm = PTE_U | PTE_V;
-            if (seg->flags & PTE_R) perm |= PTE_R;
-            if (seg->flags & PTE_W) perm |= PTE_W;
-            if (seg->flags & PTE_X) perm |= PTE_X; 
+            if (seg->flags & 0x1) perm |= PTE_X;  // Executable
+            if (seg->flags & 0x2) perm |= PTE_W;  // Writable
+            if (seg->flags & 0x4) perm |= PTE_R;  // Readable
+
 
   
             
@@ -92,7 +97,12 @@ int handle_page_fault(struct proc *p, uint64 fault_addr) {
                 printf("FAIL -1\n");
                 return -1;
             }
-
+            pte_t *pte_check = walk(p->pagetable, PGROUNDDOWN(fault_addr), 0);
+            if (!pte_check || !(*pte_check & PTE_V)) {
+                printf("❌ ERROR: Faulting address 0x%lx is NOT mapped after mappages()\n", fault_addr);
+            } else {
+                printf("✅ Mapped faulting address 0x%lx → PTE flags: 0x%lx\n", fault_addr, *pte_check);
+            }
             printf("SUCCESS\n");
             return 0; // success
         }
@@ -127,7 +137,7 @@ usertrap(void)
 
 /*--------PAGE FAULT CATCHING---------*/
 
-printf("Current process pid: %d\n", p->pid);
+//printf("Current process pid: %d\n", p->pid);
 
     // Check for page fault -> if the cause is from instruction, load or store access fault
 if (r_scause() == 0xc || r_scause() == 0xd || r_scause() == 0xf) { 
@@ -155,10 +165,10 @@ if (r_scause() == 0xc || r_scause() == 0xd || r_scause() == 0xf) {
   p->trapframe->epc = r_sepc();
 
   // print the value of sepc
-  printf("HELLO sepc value: 0x%lx\n", p->trapframe->epc);
+  //printf("HELLO sepc value: 0x%lx\n", p->trapframe->epc);
 
   
-  if(r_scause() == 8){
+  if(r_scause() == 8 || r_scause() == 9){
     // system call
 
     if(killed(p))
@@ -173,7 +183,7 @@ if (r_scause() == 0xc || r_scause() == 0xd || r_scause() == 0xf) {
     intr_on();
 
     syscall();
-  /*} else if((which_dev = devintr()) != 0){
+  } else if((which_dev = devintr()) != 0){
     // ok */
   } else {
     printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
@@ -198,7 +208,7 @@ void
 usertrapret(void)
 {
   struct proc *p = myproc();
-  printf("returning to usermode\n");
+  //printf("returning to usermode\n");
   // we're about to switch the destination of traps from
   // kerneltrap() to usertrap(), so turn off interrupts until
   // we're back in user space, where usertrap() is correct.
