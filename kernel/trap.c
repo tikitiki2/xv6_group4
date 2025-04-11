@@ -99,9 +99,9 @@ int handle_page_fault(struct proc *p, uint64 fault_addr) {
             }
             pte_t *pte_check = walk(p->pagetable, PGROUNDDOWN(fault_addr), 0);
             if (!pte_check || !(*pte_check & PTE_V)) {
-                printf("❌ ERROR: Faulting address 0x%lx is NOT mapped after mappages()\n", fault_addr);
+                printf("ERROR: Faulting address 0x%lx is NOT mapped after mappages()\n", fault_addr);
             } else {
-                printf("✅ Mapped faulting address 0x%lx → PTE flags: 0x%lx\n", fault_addr, *pte_check);
+                printf("Mapped faulting address 0x%lx → PTE flags: 0x%lx\n", fault_addr, *pte_check);
             }
             printf("SUCCESS\n");
             return 0; // success
